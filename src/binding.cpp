@@ -31,6 +31,13 @@ PYBIND11_MODULE(pyaabb, m)
 		std::vector<unsigned int> list;
 		aabb.bbox_find_bbox(bbd0, bbd1, list);
 		return list;
+	})
+	.def("nearest_point", [](const AABB::AABB &aabb, const AABB::Vector3 &p, const std::function<std::pair<double, AABB::Vector3>(const AABB::Vector3 &, int)> &sq_distance) {
+		int nearest_facet;
+		AABB::Vector3 nearest_point;
+		double sq_dist;
+		aabb.get_nearest_facet_hint(p, sq_distance, nearest_facet, nearest_point, sq_dist);
+		return std::make_tuple(nearest_facet, nearest_point, sq_dist);
 	});
 	aabb.doc() = "AABB";
 }

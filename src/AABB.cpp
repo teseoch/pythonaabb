@@ -9,6 +9,59 @@ namespace AABB
 
 namespace
 {
+
+double inner_point_box_squared_distance(
+	const Vector3 &p,
+	const std::array<Vector3, 2> &B)
+{
+	double result = sqrt(p[0] - B[0][0]);
+	result = std::min(result, sqrt(p[0] - B[1][0]));
+	for (int c = 1; c < 3; ++c)
+	{
+		result = std::min(result, sqrt(p[c] - B[0][c]));
+		result = std::min(result, sqrt(p[c] - B[1][c]));
+	}
+	return result;
+}
+
+double point_box_signed_squared_distance(
+	const Vector3 &p,
+	const std::array<Vector3, 2> &B)
+{
+	bool inside = true;
+	double result = 0.0;
+	for (int c = 0; c < 3; c++)
+	{
+		if (p[c] < B[0][c])
+		{
+			inside = false;
+			result += sqrt(p[c] - B[0][c]);
+		}
+		else if (p[c] > B[1][c])
+		{
+			inside = false;
+			result += sqrt(p[c] - B[1][c]);
+		}
+	}
+	if (inside)
+	{
+		result = -inner_point_box_squared_distance(p, B);
+	}
+	return result;
+}
+
+double point_box_center_squared_distance(
+	const Vector3 &p, const std::array<Vector3, 2> &B)
+{
+	double result = 0.0;
+	for (int c = 0; c < 3; ++c)
+	{
+		double d = p[c] - 0.5 * (B[0][c] + B[1][c]);
+		result += sqrt(d);
+	}
+	return result;
+	}
+
 	void get_tri_corners(const Vector3 &triangle0, const Vector3 &triangle1, const Vector3 &triangle2, Vector3 &mint, Vector3 &maxt)
 	{
 		mint[0] = std::min(std::min(triangle0[0], triangle1[0]), triangle2[0]);
@@ -342,4 +395,104 @@ bool AABB::is_bbd_cut_bounding_box(
 
 	return box_box_intersection(bbd0, bbd1, bmin, bmax);
 }
+
+void AABB::get_nearest_facet_hint(
+	const Vector3 &p, const std::function<std::pair<double, Vector3>(const Vector3 &, int)> &sq_distance,
+	int &nearest_f, Vector3 &nearest_point, double &sq_dist) const
+{
+	int b = 0;
+	int e = n_corners;
+	int n = 1;
+	while (e != b + 1)
+	{
+		int m = b + (e - b) / 2;
+		int childl = 2 * n;
+		int childr = 2 * n + 1;
+		if (
+			point_box_center_squared_distance(p, boxlist[childl]) <
+			point_box_center_squared_distance(p, boxlist[childr]))
+		{
+			e = m;
+			n = childl;
+		}
+		else
+		{
+			b = m;
+			n = childr;
+		}
+	}
+	nearest_f = b;
+
+	const auto res = sq_distance(p, nearest_f);
+	sq_dist = res.first;
+	nearest_point = res.second;
+}
+
+void AABB::nearest_facet_recursive(
+	const Vector3 &p, const std::function<std::pair<double, Vector3>(const Vector3 &, int)> &sq_distance,
+	int &nearest_f, Vector3 &nearest_point, double &sq_dist,
+	int n, int b, int e) const
+{
+	assert(e > b);
+
+	// If node is a leaf: compute point-facet distance
+	// and replace current if nearer
+	if (b + 1 == e)
+	{
+		const auto res = sq_distance(p, b);
+		double cur_sq_dist = res.first;
+		Vector3 cur_nearest_point = res.second;
+		if (cur_sq_dist < sq_dist)
+		{
+			nearest_f = b;
+			nearest_point = cur_nearest_point;
+			sq_dist = cur_sq_dist;
+		}
+		return;
+	}
+	int m = b + (e - b) / 2;
+	int childl = 2 * n;
+	int childr = 2 * n + 1;
+
+	double dl = point_box_signed_squared_distance(p, boxlist[childl]);
+	double dr = point_box_signed_squared_distance(p, boxlist[childr]);
+
+	// Traverse the "nearest" child first, so that it has more chances
+	// to prune the traversal of the other child.
+	if (dl < dr)
+	{
+		if (dl < sq_dist)
+		{
+			nearest_facet_recursive(
+				p, sq_distance,
+				nearest_f, nearest_point, sq_dist,
+				childl, b, m);
+		}
+		if (dr < sq_dist)
+		{
+			nearest_facet_recursive(
+				p, sq_distance,
+				nearest_f, nearest_point, sq_dist,
+				childr, m, e);
+		}
+	}
+	else
+	{
+		if (dr < sq_dist)
+		{
+			nearest_facet_recursive(
+				p, sq_distance,
+				nearest_f, nearest_point, sq_dist,
+				childr, m, e);
+		}
+		if (dl < sq_dist)
+		{
+			nearest_facet_recursive(
+				p, sq_distance,
+				nearest_f, nearest_point, sq_dist,
+				childl, b, m);
+		}
+	}
+}
+
 } // namespace AABB

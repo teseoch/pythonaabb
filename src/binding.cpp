@@ -36,7 +36,7 @@ PYBIND11_MODULE(pyaabb, m)
 		int nearest_facet;
 		AABB::Vector3 nearest_point;
 		double sq_dist;
-		aabb.get_nearest_facet_hint(p, sq_distance, nearest_facet, nearest_point, sq_dist);
+		nearest_facet = aabb.nearest_facet(p, sq_distance, nearest_point, sq_dist);
 		return std::make_tuple(nearest_facet, nearest_point, sq_dist);
 	});
 	aabb.doc() = "AABB";
